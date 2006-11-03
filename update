@@ -22,7 +22,7 @@ fi
 
 out=`mktemp -t gitlog.XXXXXXX`
 if [ $branch == master ] ; then
-	subj="$sub_prefix"
+	subj="[$sub_prefix]"
 else
 	subj="[$sub_prefix:$branch]"
 fi
