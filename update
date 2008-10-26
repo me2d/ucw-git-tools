@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # This is a generic update hook script for GIT repositories.
 # Written by Martin Mares <mj@ucw.cz> based on the template from GIT distribution.
