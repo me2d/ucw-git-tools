@@ -72,15 +72,15 @@ if ($old =~ /^0+$/) {
 	my $copy_of = scan_branches();
 	if (defined $copy_of) {
 		$subj .= " as a copy of $copy_of";
-		print $out "Created branch $ref as a copy of $copy_of.\n";
+		print $out "Created branch $ref as a copy of $copy_of ($new).\n";
 	} else {
-		print $out "Created branch $ref.\n\n";
+		print $out "Created branch $ref ($new).\n\n";
 		most_recent();
 	}
 } elsif ($new =~ /^0+$/) {
 	# Deletion of a branch
 	$subj .= ' Branch deleted';
-	print $out "Deleted branch $ref.\n\nPrevious tip was $old.\n";
+	print $out "Deleted branch $ref ($old).\n";
 } else {
 	my $lca = `git merge-base $old $new`; die if $?;
 	chomp $lca;
@@ -93,6 +93,7 @@ if ($old =~ /^0+$/) {
 		chomp $c;
 		$c =~ s{^\S+\s+}{};
 		$subj .= " $c";
+		print $out "Push to branch $ref ($old -> $new)\n\n";
 
 		# If there are multiple commits, print an overall diffstat first
 		if (@commits > 1) {
@@ -116,12 +117,12 @@ if ($old =~ /^0+$/) {
 	} elsif ($lca eq $new) {
 		# Rewind
 		$subj .= ' Branch rewound';
-		print $out "Rewound branch $ref to commit $new.\n\n";
+		print $out "Rewound branch $ref ($old -> $new).\n\n";
 		most_recent();
 	} else {
 		# Otherwise it is a rebase
 		$subj .= ' Branch rebased';
-		print $out "Rebased branch $ref to commit $new.\n\n";
+		print $out "Rebased branch $ref ($old -> $new).\n\n";
 		print $out "Commits from common ancestor:\n\n";
 		system 'git', 'rev-list', @rev_list_options, $new, "^$old";
 	}
