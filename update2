@@ -8,6 +8,7 @@ use warnings;
 use Getopt::Long;
 use IO::File;
 use File::Temp;
+use POSIX;
 
 my $mail_to;
 my $subject_prefix = "GIT";
@@ -29,6 +30,9 @@ AMEN
 my ($ref, $old, $new) = @ARGV;
 $ref =~ s{^refs/heads/}{} or exit 0;
 $old ne $new or exit 0;
+
+my $repo = POSIX::getcwd();
+$repo =~ s{.*/}{};
 
 my $subj = '[' . $subject_prefix . ($ref eq 'master' ? '' : "/$ref") . ']';
 my $out = File::Temp->new() or die;
@@ -130,8 +134,12 @@ if (defined $mail_to) {
 	system 'mutt',
 		'-F/dev/null',
 		'-x',
-		'-e',
-		'set charset="utf-8"; set send_charset="us-ascii:iso-8859-2:utf-8"',
+		'-e', 'set charset="utf-8"',
+		'-e', 'set send_charset="us-ascii:iso-8859-2:utf-8"',
+		'-e', "my_hdr X-Git-Repo: $repo",
+		'-e', "my_hdr X-Git-Branch: $ref",
+		'-e', "my_hdr X-Git-Old-SHA: $old",
+		'-e', "my_hdr X-Git-New-SHA: $new",
 		'-s', $subj,
 		$mail_to;
 } else {
