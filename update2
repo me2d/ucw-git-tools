@@ -100,7 +100,7 @@ if ($old =~ /^0+$/) {
 		my $pos_after_header = output_size();
 
 		# Show individual commits with diffs and stats
-		system 'git', 'log', @rev_list_options, '--reverse', @diff_options, '--patch', '--stat', "$old..$new";
+		system 'git', 'log', @rev_list_options, '--reverse', @diff_options, '-p', '--stat', "$old..$new";
 
 		# If the file is too long, truncate it and print just a summary
 		if (defined($max_diff_size) && output_size() > $max_diff_size) {
