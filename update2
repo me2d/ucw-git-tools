@@ -1,0 +1,141 @@
+#!/usr/bin/perl
+# This is a generic update hook script for GIT repositories.
+# Written by Martin Mares <mj@ucw.cz> and placed into public domain.
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use IO::File;
+use File::Temp;
+
+my $mail_to;
+my $subject_prefix = "GIT";
+my $max_diff_size;
+
+GetOptions(
+	'mail-to=s' => \$mail_to,
+	'subject-prefix=s' => \$subject_prefix,
+	'max-diff-size=s' => \$max_diff_size,
+) and @ARGV == 3 or die <<AMEN ;
+Usage: $0 [<options>] <refname> <sha1-old> <sha1-new>
+
+Options:
+--mail-to=<address>	Send mail to the given address
+--max-diff-size=<bytes>	If the diff is too long, send just a summary
+--subject-prefix=<px>	Prefix subjects with [<px>] (default: GIT)
+AMEN
+
+my ($ref, $old, $new) = @ARGV;
+$ref =~ s{^refs/heads/}{} or exit 0;
+$old ne $new or exit 0;
+
+my $subj = '[' . $subject_prefix . ($ref eq 'master' ? '' : "/$ref") . ']';
+my $tmpdir = File::Temp->newdir() or die;
+my $outname = "$tmpdir/0";
+my $out = IO::File->new($outname, '>') or die;
+$out->autoflush(1);
+close STDOUT;
+open STDOUT, '>&', $out or die;
+
+my @rev_list_options = ('--pretty', '--no-abbrev', '--date=iso');
+my @diff_options = ('-C');
+
+sub scan_branches() {
+	# Is there any branch pointing to $new ?
+	for (`git branch -v --no-abbrev`) {
+		chomp;
+		my ($name, $sha) = /^..(\S+)\s+(\S+)/ or die;
+		if ($name ne $ref && $sha eq $new) {
+			return $name;
+		}
+	}
+	return;
+}
+
+sub most_recent() {
+	print $out "Most recent commits:\n\n";
+	system 'git', 'rev-list', @rev_list_options, '--max-count=20', $new;
+}
+
+sub output_size() {
+	$out->seek(0, 2);
+	return $out->tell;
+}
+
+if ($old =~ /^0+$/) {
+	# Creation of a branch
+	$subj .= ' Created branch';
+	my $copy_of = scan_branches();
+	if (defined $copy_of) {
+		$subj .= " as a copy of $copy_of";
+		print $out "Created branch $ref as a copy of $copy_of.\n";
+	} else {
+		print $out "Created branch $ref.\n\n";
+		most_recent();
+	}
+} elsif ($new =~ /^0+$/) {
+	# Deletion of a branch
+	$subj .= ' Branch deleted';
+	print $out "Deleted branch $ref.\n\nPrevious tip was $old.\n";
+} else {
+	my $lca = `git merge-base $old $new`; die if $?;
+	chomp $lca;
+	if ($lca eq $old) {
+		# Fast forward
+		# Scan all commits first and construct subject
+		my @commits = `git rev-list $old..$new --pretty=oneline --no-abbrev --no-merges`; $? and die;
+		@commits or exit;
+		my $c = $commits[0];
+		chomp $c;
+		$c =~ s{^\S+\s+}{};
+		$subj .= " $c";
+
+		# If there are multiple commits, print an overall diffstat first
+		if (@commits > 1) {
+			$subj .= ' [...]';
+			print $out "Overall diffstat:\n\n";
+			system 'git', 'diff', '--stat', $old, $new;
+			print $out "\nCommits:\n\n";
+		}
+		my $pos_after_header = output_size();
+
+		# Show individual commits with diffs and stats
+		system 'git', 'log', @rev_list_options, '--reverse', @diff_options, '--patch', '--stat', "$old..$new";
+
+		# If the file is too long, truncate it and print just a summary
+		if (defined($max_diff_size) && output_size() > $max_diff_size) {
+			$out->truncate($pos_after_header);
+			output_size();
+			print $out "Diff was too long, printing just a summary.\n\n";
+			system 'git', 'log', @rev_list_options, '--reverse', "$old..$new";
+		}
+	} elsif ($lca eq $new) {
+		# Rewind
+		$subj .= ' Branch rewound';
+		print $out "Rewound branch $ref to commit $new.\n\n";
+		most_recent();
+	} else {
+		# Otherwise it is a rebase
+		$subj .= ' Branch rebased';
+		print $out "Rebased branch $ref to commit $new.\n\n";
+		print $out "Commits from common ancestor:\n\n";
+		system 'git', 'rev-list', @rev_list_options, $new, "^$old";
+	}
+}
+
+$out->close();
+if (defined $mail_to) {
+	close STDIN;
+	open STDIN, '<', $outname;
+	system 'mutt',
+		'-F/dev/null',
+		'-x',
+		'-e',
+		'set charset="utf-8"; set send_charset="us-ascii:iso-8859-2:utf-8"',
+		'-s', $subj,
+		$mail_to;
+} else {
+	print STDERR "Subject: $subj\n\n";
+	`cat >&2 $outname`;
+}
