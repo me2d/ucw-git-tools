@@ -31,9 +31,8 @@ $ref =~ s{^refs/heads/}{} or exit 0;
 $old ne $new or exit 0;
 
 my $subj = '[' . $subject_prefix . ($ref eq 'master' ? '' : "/$ref") . ']';
-my $tmpdir = File::Temp->newdir() or die;
-my $outname = "$tmpdir/0";
-my $out = IO::File->new($outname, '>') or die;
+my $out = File::Temp->new() or die;
+my $outname = $out->filename;
 $out->autoflush(1);
 close STDOUT;
 open STDOUT, '>&', $out or die;
