@@ -57,6 +57,21 @@ sub scan_branches() {
 	return;
 }
 
+sub scan_commits() {
+	my @commits = ();
+	for (`git rev-list $old..$new --pretty=format:"# %H (%P) %s"`) {
+		chomp;
+		/^# / or next;
+		my ($hash, $parents, $subject) = m{^# (\S+) \(([^)]*)\) (.*)} or die;
+		push @commits, {
+			hash => $hash,
+			parents => [ split /\s+/, $parents ],
+			subject => $subject,
+		};
+	}
+	return @commits;
+}
+
 sub most_recent() {
 	print $out "Most recent commits:\n\n";
 	system 'git', 'rev-list', @rev_list_options, '--max-count=20', $new;
@@ -86,22 +101,38 @@ if ($old =~ /^0+$/) {
 	my $lca = `git merge-base $old $new`; die if $?;
 	chomp $lca;
 	if ($lca eq $old) {
-		# Fast forward
-		# Scan all commits first and construct subject
-		my @commits = `git rev-list $old..$new --pretty=oneline --no-abbrev --no-merges`; $? and die;
+		# Fast forward ... scan all objects
+		my @commits = scan_commits();
+		my @nonmerges = grep { @{$_->{parents}} == 1 } @commits;
 		@commits or exit;
-		my $c = $commits[0];
-		chomp $c;
-		$c =~ s{^\S+\s+}{};
-		$subj .= " $c";
+
+		# Construct subject
+		# Try to recognize simple merges and display them as such
+		my $c0 = $commits[0];
+		my $n0 = $nonmerges[0];
+		my $c0p = $c0->{parents};
+		if (@{$c0p} == 2 &&
+		    $c0->{subject} =~ m{^\s*Merge branch '([^']*)'} &&
+		    $1 ne $ref &&
+		    ($c0p->[0] eq $old || $c0p->[1] eq $old)) {
+			# Pushed a merge of a foreign branch to the current one
+			$subj .= ' ' . $c0->{subject};
+		} elsif ($n0) {
+			# Otherwise take the subject of the first non-merge commit
+			$subj .= ' ' . $n0->{subject};
+		} else {
+			# If there is none, take the first merge
+			$subj .= ' ' . $c0->{subject};
+		}
+
 		print $out "Push to branch $ref ($old -> $new)\n\n";
 
 		# If there are multiple commits, print an overall diffstat first
-		if (@commits > 1) {
-			$subj .= ' [...]';
-			print $out "Overall diffstat:\n\n";
+		if (@nonmerges > 1) {
+			$subj .= ' [' . (scalar @commits) . ' commits]';
+			print $out 'Pushed ', (scalar @commits), " commits. Overall diffstat:\n\n";
 			system 'git', 'diff', '--stat', $old, $new;
-			print $out "\nCommits:\n\n";
+			print $out "\n";
 		}
 		my $pos_after_header = output_size();
 
