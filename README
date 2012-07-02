@@ -1,0 +1,19 @@
+This package contains several simple tools for use with Git.
+
+The tools have been written by Martin Mares <mj@ucw.cz> and put
+into the public domain.
+
+== update2 ==
+
+This is a somewhat sophisticated Perl script for sending of commit
+logs by e-mail whenever new commits are pushed to a Git repository.
+Just make your update hook call:
+
+	$GIT_TOOLS/update2 --mail-to="you@example.net" "$@"
+
+Beside normal commits, the script should recognize creations and
+deletions of branches and also rewinding and rebasing.
+
+== update ==
+
+This is a previous incarnation of the update script.
