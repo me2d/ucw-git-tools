@@ -38,6 +38,7 @@ my $subj = '[' . $subject_prefix . ($ref eq 'master' ? '' : "/$ref") . ']';
 my $out = File::Temp->new() or die;
 my $outname = $out->filename;
 $out->autoflush(1);
+open ORIG_STDOUT, '>&', \*STDOUT;
 close STDOUT;
 open STDOUT, '>&', $out or die;
 
@@ -144,6 +145,7 @@ if (defined $mail_to) {
 		'-s', $subj,
 		$mail_to;
 } else {
-	print STDERR "Subject: $subj\n\n";
-	`cat >&2 $outname`;
+	open STDOUT, '>&', \*ORIG_STDOUT;
+	print "Subject: $subj\n\n";
+	system 'cat', $outname;
 }
