@@ -54,7 +54,7 @@ sub scan_branches($$) {
 	for (`git branch -v --no-abbrev`) {
 		chomp;
 		my ($name, $sha) = /^..(\S+)\s+(\S+)/ or die;
-		if ($name ne $ref && $sha eq $new) {
+		if ((!defined($ref) || $name ne $ref) && $sha eq $new) {
 			return $name;
 		}
 	}
@@ -179,6 +179,32 @@ sub update_branch($$$$$)
 	return 1;
 }
 
+sub update_tag($$$$$)
+{
+	my ($tag, $old, $new, $out, $headers) = @_;
+
+	my $subj = '[' . $subject_prefix . ']';
+	if ($new =~ /^0+$/) {
+		$subj .= " Deleted tag $tag";
+		print $out "Deleted tag $tag ($old).\n";
+	} else {
+		my $copy_of = scan_branches(undef, $new);
+		my $cp = defined($copy_of) ? " to branch $copy_of" : "";
+		if ($old =~ /^0+/) {
+			$subj .= " Created tag $tag$cp";
+			print $out "Created tag $tag$cp ($new).\n\n";
+		} else {
+			$subj .= " Changed tag $tag$cp";
+			print $out "Changed tag $tag$cp ($old -> $new).\n\n";
+		}
+		most_recent($new);
+	}
+
+	$headers->{'Subject'} = $subj;
+	$headers->{'X-Git-Tag'} = $tag;
+	return 1;
+}
+
 sub update_ref($$$)
 {
 	my ($ref, $old, $new) = @_;
@@ -199,6 +225,7 @@ sub update_ref($$$)
 
 	my $send;
 	if ($type eq 'heads') { $send = update_branch($name, $old, $new, $out, $headers); }
+	elsif ($type eq 'tags') { $send = update_tag($name, $old, $new, $out, $headers); }
 	$out->close();
 	$send or return;
 
