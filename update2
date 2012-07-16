@@ -39,7 +39,7 @@ sub update_ref($$$);
 open ORIG_STDOUT, '>&', \*STDOUT;
 
 if (@ARGV) {
-	update_ref($ARGV[0], $ARGV[1], $ARGV[2]); #FIXME
+	update_ref($ARGV[0], $ARGV[1], $ARGV[2]);
 } else {
 	while (<STDIN>) {
 		chomp;
