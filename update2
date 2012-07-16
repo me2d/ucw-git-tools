@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# This is a generic update hook script for GIT repositories.
+# This is a generic update/post-receive hook script for GIT repositories.
 # Written by Martin Mares <mj@ucw.cz> and placed into public domain.
 
 use strict;
@@ -18,8 +18,9 @@ GetOptions(
 	'mail-to=s' => \$mail_to,
 	'subject-prefix=s' => \$subject_prefix,
 	'max-diff-size=s' => \$max_diff_size,
-) and @ARGV == 3 or die <<AMEN ;
-Usage: $0 [<options>] <refname> <sha1-old> <sha1-new>
+) and (@ARGV == 3 || !@ARGV) or die <<AMEN ;
+Usage as update hook: $0 [<options>] <refname> <sha1-old> <sha1-new>
+Usage as post-receive hook: $0 [<options>]
 
 Options:
 --mail-to=<address>	Send mail to the given address
@@ -27,26 +28,29 @@ Options:
 --subject-prefix=<px>	Prefix subjects with [<px>] (default: GIT)
 AMEN
 
-my ($ref, $old, $new) = @ARGV;
-$ref =~ s{^refs/heads/}{} or exit 0;
-$old ne $new or exit 0;
-
 my $repo = POSIX::getcwd();
 $repo =~ s{.*/}{};
-
-my $subj = '[' . $subject_prefix . ($ref eq 'master' ? '' : "/$ref") . ']';
-my $out = File::Temp->new() or die;
-my $outname = $out->filename;
-$out->autoflush(1);
-open ORIG_STDOUT, '>&', \*STDOUT;
-close STDOUT;
-open STDOUT, '>&', $out or die;
 
 my @rev_list_options = ('--pretty', '--no-abbrev', '--date=iso');
 my @diff_options = ('-C');
 
-sub scan_branches() {
-	# Is there any branch pointing to $new ?
+sub update_ref($$$);
+
+open ORIG_STDOUT, '>&', \*STDOUT;
+
+if (@ARGV) {
+	update_ref($ARGV[0], $ARGV[1], $ARGV[2]); #FIXME
+} else {
+	while (<STDIN>) {
+		chomp;
+		my ($old, $new, $ref) = /^(\S+) (\S+) (.*)/ or die "Error parsing hook input ($_)\n";
+		update_ref($ref, $old, $new);
+	}
+}
+
+sub scan_branches($$) {
+	my ($ref, $new) = @_;
+	# Is there any branch pointing to $new (other than $ref)?
 	for (`git branch -v --no-abbrev`) {
 		chomp;
 		my ($name, $sha) = /^..(\S+)\s+(\S+)/ or die;
@@ -57,7 +61,8 @@ sub scan_branches() {
 	return;
 }
 
-sub scan_commits() {
+sub scan_commits($$) {
+	my ($old, $new) = @_;
 	my @commits = ();
 	for (`git rev-list $old..$new --pretty=format:"# %H (%P) %s"`) {
 		chomp;
@@ -72,113 +77,150 @@ sub scan_commits() {
 	return @commits;
 }
 
-sub most_recent() {
-	print $out "Most recent commits:\n\n";
+sub most_recent($) {
+	my ($new) = @_;
+	print STDOUT "Most recent commits:\n\n";
 	system 'git', 'rev-list', @rev_list_options, '--max-count=20', $new;
 }
 
-sub output_size() {
+sub output_size($) {
+	my ($out) = @_;
 	$out->seek(0, 2);
 	return $out->tell;
 }
 
-if ($old =~ /^0+$/) {
-	# Creation of a branch
-	$subj .= ' Created branch';
-	my $copy_of = scan_branches();
-	if (defined $copy_of) {
-		$subj .= " as a copy of $copy_of";
-		print $out "Created branch $ref as a copy of $copy_of ($new).\n";
-	} else {
-		print $out "Created branch $ref ($new).\n\n";
-		most_recent();
-	}
-} elsif ($new =~ /^0+$/) {
-	# Deletion of a branch
-	$subj .= ' Branch deleted';
-	print $out "Deleted branch $ref ($old).\n";
-} else {
-	my $lca = `git merge-base $old $new`; die if $?;
-	chomp $lca;
-	if ($lca eq $old) {
-		# Fast forward ... scan all objects
-		my @commits = scan_commits();
-		my @nonmerges = grep { @{$_->{parents}} == 1 } @commits;
-		@commits or exit;
+sub update_branch($$$$$)
+{
+	my ($branch, $old, $new, $out, $headers) = @_;
 
-		# Construct subject
-		# Try to recognize simple merges and display them as such
-		my $c0 = $commits[0];
-		my $n0 = $nonmerges[0];
-		my $c0p = $c0->{parents};
-		if (@{$c0p} == 2 &&
-		    ($c0p->[0] eq $old || $c0p->[1] eq $old) &&
-		    $c0->{subject} =~ m{^\s*Merge branch '([^']*)' into (\S+)} &&
-		    (($1 eq $ref) != ($2 eq $ref))) {
-			# Pushed a merge of the current branch with another local branch
-			$subj .= ' ' . $c0->{subject};
-		} elsif ($n0) {
-			# Otherwise take the subject of the first non-merge commit
-			$subj .= ' ' . $n0->{subject};
+	my $subj = '[' . $subject_prefix . ($branch eq 'master' ? '' : "/$branch") . ']';
+	if ($old =~ /^0+$/) {
+		# Creation of a branch
+		$subj .= ' Created branch';
+		my $copy_of = scan_branches($branch, $new);
+		if (defined $copy_of) {
+			$subj .= " as a copy of $copy_of";
+			print $out "Created branch $branch as a copy of $copy_of ($new).\n";
 		} else {
-			# If there is none, take the first merge
-			$subj .= ' ' . $c0->{subject};
+			print $out "Created branch $branch ($new).\n\n";
+			most_recent($new);
 		}
-
-		print $out "Push to branch $ref ($old -> $new)\n\n";
-
-		# If there are multiple commits, mention that
-		if (@nonmerges > 1) {
-			$subj .= ' [' . (scalar @commits) . ' commits]';
-			print $out 'Pushed ', (scalar @commits), " commits. Overall diffstat:\n\n";
-		}
-
-		# Print an overall diffstat
-		system 'git', 'diff', '--stat', $old, $new;
-		print $out "\n";
-		my $pos_after_header = output_size();
-
-		# Show individual commits with diffs
-		system 'git', 'log', @rev_list_options, @diff_options, '-p', "$old..$new";
-
-		# If the file is too long, truncate it and print just a summary
-		if (defined($max_diff_size) && output_size() > $max_diff_size) {
-			$out->truncate($pos_after_header);
-			output_size();
-			print $out "Diff was too long, printing just a summary.\n\n";
-			system 'git', 'log', @rev_list_options, "$old..$new";
-		}
-	} elsif ($lca eq $new) {
-		# Rewind
-		$subj .= ' Branch rewound';
-		print $out "Rewound branch $ref ($old -> $new).\n\n";
-		most_recent();
+	} elsif ($new =~ /^0+$/) {
+		# Deletion of a branch
+		$subj .= ' Branch deleted';
+		print $out "Deleted branch $branch ($old).\n";
 	} else {
-		# Otherwise it is a rebase
-		$subj .= ' Branch rebased';
-		print $out "Rebased branch $ref ($old -> $new).\n\n";
-		print $out "Commits from common ancestor:\n\n";
-		system 'git', 'rev-list', @rev_list_options, $new, "^$old";
+		my $lca = `git merge-base $old $new`; die if $?;
+		chomp $lca;
+		if ($lca eq $old) {
+			# Fast forward ... scan all objects
+			my @commits = scan_commits($old, $new);
+			my @nonmerges = grep { @{$_->{parents}} == 1 } @commits;
+			@commits or return;
+
+			# Construct subject
+			# Try to recognize simple merges and display them as such
+			my $c0 = $commits[0];
+			my $n0 = $nonmerges[0];
+			my $c0p = $c0->{parents};
+			if (@{$c0p} == 2 &&
+			    ($c0p->[0] eq $old || $c0p->[1] eq $old) &&
+			    $c0->{subject} =~ m{^\s*Merge branch '([^']*)' into (\S+)} &&
+			    (($1 eq $branch) != ($2 eq $branch))) {
+				# Pushed a merge of the current branch with another local branch
+				$subj .= ' ' . $c0->{subject};
+			} elsif ($n0) {
+				# Otherwise take the subject of the first non-merge commit
+				$subj .= ' ' . $n0->{subject};
+			} else {
+				# If there is none, take the first merge
+				$subj .= ' ' . $c0->{subject};
+			}
+
+			print $out "Push to branch $branch ($old -> $new)\n\n";
+
+			# If there are multiple commits, mention that
+			if (@nonmerges > 1) {
+				$subj .= ' [' . (scalar @commits) . ' commits]';
+				print $out 'Pushed ', (scalar @commits), " commits. Overall diffstat:\n\n";
+			}
+
+			# Print an overall diffstat
+			system 'git', 'diff', '--stat', $old, $new;
+			print $out "\n";
+			my $pos_after_header = output_size($out);
+
+			# Show individual commits with diffs
+			system 'git', 'log', @rev_list_options, @diff_options, '-p', "$old..$new";
+
+			# If the file is too long, truncate it and print just a summary
+			if (defined($max_diff_size) && output_size($out) > $max_diff_size) {
+				$out->truncate($pos_after_header);
+				output_size($out);
+				print $out "Diff was too long, printing just a summary.\n\n";
+				system 'git', 'log', @rev_list_options, "$old..$new";
+			}
+		} elsif ($lca eq $new) {
+			# Rewind
+			$subj .= ' Branch rewound';
+			print $out "Rewound branch $branch ($old -> $new).\n\n";
+			most_recent($new);
+		} else {
+			# Otherwise it is a rebase
+			$subj .= ' Branch rebased';
+			print $out "Rebased branch $branch ($old -> $new).\n\n";
+			print $out "Commits from common ancestor:\n\n";
+			system 'git', 'rev-list', @rev_list_options, $new, "^$old";
+		}
 	}
+
+	$headers->{'Subject'} = $subj;
+	$headers->{'X-Git-Branch'} = $branch;
+	return 1;
 }
 
-$out->close();
-if (defined $mail_to) {
-	close STDIN;
-	open STDIN, '<', $outname;
-	system 'mutt',
-		'-F/dev/null',
-		'-x',
-		'-e', 'set charset="utf-8"',
-		'-e', 'set send_charset="us-ascii:iso-8859-2:utf-8"',
-		'-e', "my_hdr X-Git-Repo: $repo",
-		'-e', "my_hdr X-Git-Branch: $ref",
-		'-e', "my_hdr X-Git-Old-SHA: $old",
-		'-e', "my_hdr X-Git-New-SHA: $new",
-		'-s', $subj,
-		$mail_to;
-} else {
-	open STDOUT, '>&', \*ORIG_STDOUT;
-	print "Subject: $subj\n\n";
-	system 'cat', $outname;
+sub update_ref($$$)
+{
+	my ($ref, $old, $new) = @_;
+	$old ne $new or return;
+	my ($type, $name) = ($ref =~ m{^refs/([^/]*)/(.*)}) or return;
+
+	my $out = File::Temp->new() or die;
+	my $outname = $out->filename;
+	$out->autoflush(1);
+	close STDOUT;
+	open STDOUT, '>&', $out or die;
+
+	my $headers = {
+		'X-Git-Repo' => $repo,
+		'X-Git-Old-SHA' => $old,
+		'X-Git-New-SHA' => $new,
+	};
+
+	my $send;
+	if ($type eq 'heads') { $send = update_branch($name, $old, $new, $out, $headers); }
+	$out->close();
+	$send or return;
+
+	if (defined $mail_to) {
+		close STDIN;
+		open STDIN, '<', $outname;
+		my @mutt = (
+			'mutt',
+			'-F/dev/null',
+			'-x',
+			'-e', 'set charset="utf-8"',
+			'-e', 'set send_charset="us-ascii:iso-8859-2:utf-8"',
+			'-s', $headers->{'Subject'},
+		);
+		delete $headers->{'Subject'};
+		push @mutt, map { ('-e', "my_hdr $_: " . $headers->{$_}) } keys %$headers;
+		system @mutt, $mail_to;
+	} else {
+		open STDOUT, '>&', \*ORIG_STDOUT;
+		print map { "$_: " . $headers->{$_} . "\n" } sort keys %$headers;
+		print "\n";
+		system 'cat', $outname;
+		print "\n";
+	}
 }
