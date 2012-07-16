@@ -112,10 +112,10 @@ if ($old =~ /^0+$/) {
 		my $n0 = $nonmerges[0];
 		my $c0p = $c0->{parents};
 		if (@{$c0p} == 2 &&
-		    $c0->{subject} =~ m{^\s*Merge branch '([^']*)'} &&
-		    $1 ne $ref &&
-		    ($c0p->[0] eq $old || $c0p->[1] eq $old)) {
-			# Pushed a merge of a foreign branch to the current one
+		    ($c0p->[0] eq $old || $c0p->[1] eq $old) &&
+		    $c0->{subject} =~ m{^\s*Merge branch '([^']*)' into (\S+)} &&
+		    (($1 eq $ref) != ($2 eq $ref))) {
+			# Pushed a merge of the current branch with another local branch
 			$subj .= ' ' . $c0->{subject};
 		} elsif ($n0) {
 			# Otherwise take the subject of the first non-merge commit
