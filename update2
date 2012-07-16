@@ -127,17 +127,19 @@ if ($old =~ /^0+$/) {
 
 		print $out "Push to branch $ref ($old -> $new)\n\n";
 
-		# If there are multiple commits, print an overall diffstat first
+		# If there are multiple commits, mention that
 		if (@nonmerges > 1) {
 			$subj .= ' [' . (scalar @commits) . ' commits]';
 			print $out 'Pushed ', (scalar @commits), " commits. Overall diffstat:\n\n";
-			system 'git', 'diff', '--stat', $old, $new;
-			print $out "\n";
 		}
+
+		# Print an overall diffstat
+		system 'git', 'diff', '--stat', $old, $new;
+		print $out "\n";
 		my $pos_after_header = output_size();
 
-		# Show individual commits with diffs and stats
-		system 'git', 'log', @rev_list_options, @diff_options, '-p', '--stat', "$old..$new";
+		# Show individual commits with diffs
+		system 'git', 'log', @rev_list_options, @diff_options, '-p', "$old..$new";
 
 		# If the file is too long, truncate it and print just a summary
 		if (defined($max_diff_size) && output_size() > $max_diff_size) {
