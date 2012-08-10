@@ -36,12 +36,13 @@ my @diff_options = ('-C');
 
 sub update_ref($$$);
 
+open ORIG_STDIN, '<&', \*STDIN;
 open ORIG_STDOUT, '>&', \*STDOUT;
 
 if (@ARGV) {
 	update_ref($ARGV[0], $ARGV[1], $ARGV[2]);
 } else {
-	while (<STDIN>) {
+	while (<ORIG_STDIN>) {
 		chomp;
 		my ($old, $new, $ref) = /^(\S+) (\S+) (.*)/ or die "Error parsing hook input ($_)\n";
 		update_ref($ref, $old, $new);
