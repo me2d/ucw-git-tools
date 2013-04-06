@@ -124,10 +124,15 @@ sub update_branch($$$$$)
 			my $c0 = $commits[0];
 			my $n0 = $nonmerges[0];
 			my $c0p = $c0->{parents};
+
 			if (@{$c0p} == 2 &&
 			    ($c0p->[0] eq $old || $c0p->[1] eq $old) &&
-			    $c0->{subject} =~ m{^\s*Merge branch '([^']*)' into (\S+)} &&
-			    (($1 eq $branch) != ($2 eq $branch))) {
+			    (
+				$c0->{subject} =~ m{^\s*Merge branch '([^']*)' into (\S+)} &&
+				($1 eq $branch) != ($2 eq $branch)
+			    ) || (
+				$c0->{subject} =~ m{^\s*Merge branch '([^']*)'( of |$)}
+			    )) {
 				# Pushed a merge of the current branch with another local branch
 				$subj .= ' ' . $c0->{subject};
 			} elsif ($n0) {
