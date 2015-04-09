@@ -143,7 +143,7 @@ sub update_branch($$$$$)
 				$subj .= ' ' . $c0->{subject};
 			}
 
-			print $out "Push to branch $branch ($old -> $new)\n\n";
+			print $out "Push to branch $branch ($old..$new)\n\n";
 
 			# If there are multiple commits, mention that
 			if (@nonmerges > 1) {
@@ -169,12 +169,12 @@ sub update_branch($$$$$)
 		} elsif ($lca eq $new) {
 			# Rewind
 			$subj .= ' Branch rewound';
-			print $out "Rewound branch $branch ($old -> $new).\n\n";
+			print $out "Rewound branch $branch ($old..$new).\n\n";
 			most_recent($new);
 		} else {
 			# Otherwise it is a rebase
 			$subj .= ' Branch rebased';
-			print $out "Rebased branch $branch ($old -> $new).\n\n";
+			print $out "Rebased branch $branch ($old..$new).\n\n";
 			print $out "Commits from common ancestor:\n\n";
 			system 'git', 'rev-list', @rev_list_options, $new, "^$old";
 		}
@@ -201,7 +201,7 @@ sub update_tag($$$$$)
 			print $out "Created tag $tag$cp ($new).\n\n";
 		} else {
 			$subj .= " Changed tag $tag$cp";
-			print $out "Changed tag $tag$cp ($old -> $new).\n\n";
+			print $out "Changed tag $tag$cp ($old..$new).\n\n";
 		}
 		most_recent($new);
 	}
