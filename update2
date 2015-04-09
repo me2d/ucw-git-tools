@@ -251,6 +251,7 @@ sub update_ref($$$)
 			'-x',
 			'-e', 'set charset="utf-8"',
 			'-e', 'set send_charset="us-ascii:iso-8859-2:utf-8"',
+			'-e', 'set record=',
 			'-s', $headers->{'Subject'},
 		);
 		delete $headers->{'Subject'};
