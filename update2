@@ -49,17 +49,24 @@ if (@ARGV) {
 	}
 }
 
-sub scan_branches($$) {
+sub get_source($$) {
 	my ($ref, $new) = @_;
-	# Is there any branch pointing to $new (other than $ref)?
-	for (`git branch -v --no-abbrev`) {
+	# Get branch (different from $ref) whose tip is $new
+	my @branches = ();
+	for (`git for-each-ref refs/heads`) {
 		chomp;
-		my ($name, $sha) = /^..(\S+)\s+(\S+)/ or die;
-		if ((!defined($ref) || $name ne $ref) && $sha eq $new) {
-			return $name;
+		my ($sha, $type, $name) = m{^(\S+) (\S+)\trefs/heads/(\S+)$} or die;
+		if ((!defined($ref) || $name ne $ref) && $sha eq $new && $type eq 'commit') {
+			push @branches, $name;
 		}
 	}
-	return;
+	if (@branches == 1) {
+		return $branches[0];
+	} elsif (@branches) {
+		return sprintf("%s [and %d other]", $branches[0], @branches-1);
+	} else {
+		return;
+	}
 }
 
 sub scan_commits($$) {
@@ -98,7 +105,7 @@ sub update_branch($$$$$)
 	if ($old =~ /^0+$/) {
 		# Creation of a branch
 		$subj .= ' Created branch';
-		my $copy_of = scan_branches($branch, $new);
+		my $copy_of = get_source($branch, $new);
 		if (defined $copy_of) {
 			$subj .= " as a copy of $copy_of";
 			print $out "Created branch $branch as a copy of $copy_of ($new).\n";
@@ -194,7 +201,7 @@ sub update_tag($$$$$)
 		$subj .= " Deleted tag $tag";
 		print $out "Deleted tag $tag ($old).\n";
 	} else {
-		my $copy_of = scan_branches(undef, $new);
+		my $copy_of = get_source(undef, $new);
 		my $cp = defined($copy_of) ? " to branch $copy_of" : "";
 		if ($old =~ /^0+/) {
 			$subj .= " Created tag $tag$cp";
