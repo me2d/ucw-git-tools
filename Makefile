@@ -8,5 +8,5 @@ release:
 	git push --tags
 	git archive --format=tar --prefix=git-tools-$(VERSION)/ HEAD | gzip >$(ARCHIVE)
 	scp $(ARCHIVE) atrey:~ftp/pub/local/mj/linux/
-	ssh jw "cd www && bin/release-prog git-tools $(VERSION)"
+	ssh jw "cd web && bin/release-prog git-tools $(VERSION)"
 	mv $(ARCHIVE) ~/archives/mj/
