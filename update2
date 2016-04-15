@@ -244,7 +244,7 @@ sub update_ref($$$)
 
 	if (defined $mail_to) {
 		close STDIN;
-		open STDIN, '<', $outname;
+		open STDIN, '-|', "source-highlight", "--src-lang=diff", "-i", $outname;
 		my @mutt = (
 			'mutt',
 			'-F/dev/null',
@@ -252,6 +252,7 @@ sub update_ref($$$)
 			'-e', 'set charset="utf-8"',
 			'-e', 'set send_charset="us-ascii:iso-8859-2:utf-8"',
 			'-e', 'set record=',
+			'-e', 'set content_type=text/html',
 			'-s', $headers->{'Subject'},
 		);
 		delete $headers->{'Subject'};
